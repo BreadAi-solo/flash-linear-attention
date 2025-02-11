@@ -79,6 +79,205 @@ class RWKV7FeedForward(nn.Module):
             state.update(ffn_state=x[:, -1], layer_idx=self.layer_idx, offset=0)
         return self.value(self.act_fn(self.key(x.addcmul(shifted - x, self.x_k)))), state
 
+class PhiMoEBlockSparseTop2MLP(nn.Module):
+    def __init__(self, config: PhiMoEConfig):
+        super().__init__()
+        self.ffn_dim = config.intermediate_size
+        self.hidden_dim = config.hidden_size
+
+        self.w1 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
+        self.w2 = nn.Linear(self.ffn_dim, self.hidden_dim, bias=False)
+        self.w3 = nn.Linear(self.hidden_dim, self.ffn_dim, bias=False)
+
+        self.act_fn = ACT2FN[config.hidden_act]
+
+    def forward(self, hidden_states):
+        current_hidden_states = self.act_fn(self.w1(hidden_states)) * self.w3(hidden_states)
+        current_hidden_states = self.w2(current_hidden_states)
+        return current_hidden_states
+
+
+def sparsemixer(scores, top_k, jitter_eps, training):
+    assert top_k == 2
+    
+    ################ first expert ################
+    
+    with torch.no_grad():
+        # compute mask for sparsity
+        mask_logits_threshold, max_ind = scores.max(dim=-1, keepdim=True)
+        factor = scores.abs().clamp(min=mask_logits_threshold)
+        mask_logits_threshold = (
+            (mask_logits_threshold - scores) / factor
+        ) > (2 * jitter_eps)
+
+    # apply mask 
+    masked_gates = scores.masked_fill(mask_logits_threshold, float('-inf'))
+    if training:
+        selected_experts = (
+            masked_gates - torch.empty_like(masked_gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
+        ).max(dim=-1)[1].unsqueeze(-1) # gumbel sampling, more robust than than the multinomial method
+    else:
+        selected_experts = max_ind
+        
+    # compute scores for gradients
+    masked_gates = torch.softmax(masked_gates, dim=-1)
+    multiplier_o = masked_gates.gather(dim=-1, index=selected_experts)
+    
+    if training:
+        # compute midpoint mask 
+        max_scores, max_ind = masked_gates.max(dim=-1, keepdim=True)
+        mask_for_one = torch.logical_or(
+            selected_experts == max_ind,
+            torch.rand_like(max_scores) > 0.75 # Heun's third-order method: f(x) - f(0) = .25 f'(x) + .75 f'(x/3.)
+        ) 
+        # 1 -> 1.0 & 0 -> 1./3: lambda x: (x + 0.5) / 1.5
+        mask_for_one = torch.add(0.3333, mask_for_one, alpha=0.6667).type_as(masked_gates)
+
+        multiplier = mp.apply(
+            scores, 
+            multiplier_o, 
+            selected_experts, 
+            masked_gates, 
+            mask_for_one,
+        )
+    else:
+        multiplier = multiplier_o
+
+    # masked out first expert 
+    masked_scores = torch.scatter(
+        scores,
+        -1,
+        selected_experts,
+        float('-inf'),
+    )
+    with torch.no_grad():
+        # compute mask for sparsity
+        mask_logits_threshold, max_ind = masked_scores.max(dim=-1, keepdim=True)
+        factor = scores.abs().clamp(min=mask_logits_threshold)
+        mask_logits_threshold = (
+            (mask_logits_threshold - scores) / factor
+        ) > (2 * jitter_eps)
+
+    # apply mask 
+    masked_gates_top2 = masked_scores.masked_fill(mask_logits_threshold, float('-inf'))
+    if training:
+        selected_experts_top2 = (
+            masked_gates_top2 - torch.empty_like(masked_gates_top2, memory_format=torch.legacy_contiguous_format).exponential_().log()
+        ).max(dim=-1)[1].unsqueeze(-1) # gumbel sampling, more robust than than the multinomial method
+    else:
+        selected_experts_top2 = max_ind
+    # compute scores for gradients
+    masked_gates_top2 = torch.softmax(masked_gates_top2, dim=-1)
+    multiplier_top2_o = masked_gates_top2.gather(dim=-1, index=selected_experts_top2)
+    
+    if training: 
+        # compute midpoint mask 
+        max_scores, max_ind = masked_gates_top2.max(dim=-1, keepdim=True)
+        mask_for_one_top2 = torch.logical_or(
+            selected_experts_top2 == max_ind,
+            torch.rand_like(max_scores).uniform_() > 0.75 # Heun's third-order method: f(x) - f(0) = .25 f'(x) + .75 f'(x/3.)
+        ) 
+        # 1 -> 1.0 & 0 -> 1./3: lambda x: (x + 0.5) / 1.5
+        mask_for_one_top2 = torch.add(0.3333, mask_for_one_top2, alpha=0.6667).type_as(masked_gates_top2)
+
+        multiplier_top2 = mp.apply(
+            scores, 
+            multiplier_top2_o, 
+            selected_experts_top2, 
+            masked_gates_top2, 
+            mask_for_one_top2,
+        )
+    else:
+        multiplier_top2 = multiplier_top2_o
+    
+    multiplier = torch.concat((multiplier, multiplier_top2), dim=-1)
+    selected_experts = torch.concat((selected_experts, selected_experts_top2), dim=-1)
+    
+    return (
+        multiplier, 
+        selected_experts,
+    )
+
+iterations = 0
+class PhiMoESparseMoeBlock(nn.Module):
+    """
+    This implementation is
+    strictly equivalent to standard MoE with full capacity (no
+    dropped tokens). It's faster since it formulates MoE operations
+    in terms of block-sparse operations to accomodate imbalanced
+    assignments of tokens to experts, whereas standard MoE either
+    (1) drop tokens at the cost of reduced performance or (2) set
+    capacity factor to number of experts and thus waste computation
+    and memory on padding.
+    """
+
+    def __init__(self, config):
+        super().__init__()
+        self.hidden_dim = config.hidden_size
+        self.ffn_dim = config.intermediate_size
+        self.num_experts = config.num_local_experts
+        self.top_k = config.num_experts_per_tok
+        global iterations
+        iterations +=1
+        self.iter = iterations
+        # gating
+        self.gate = nn.Linear(self.hidden_dim, self.num_experts, bias=False)
+
+        self.experts = nn.ModuleList([PhiMoEBlockSparseTop2MLP(config) for _ in range(self.num_experts)])
+
+        # Jitter parameters
+        self.router_jitter_noise = config.router_jitter_noise
+        self.input_jitter_noise = config.input_jitter_noise
+        
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """ """
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        if self.training and self.input_jitter_noise > 0:
+            hidden_states *= torch.empty_like(hidden_states).uniform_(1.0 - self.input_jitter_noise, 1.0 + self.input_jitter_noise)
+        hidden_states = hidden_states.view(-1, hidden_dim)
+        # router_logits: (batch * sequence_length, n_experts)
+        # print ( 'moe', self.iter, torch.norm(hidden_states).item())
+        router_logits = self.gate(hidden_states)
+
+        routing_weights, selected_experts = sparsemixer(
+            router_logits, 
+            top_k=2, 
+            jitter_eps=self.router_jitter_noise, 
+            training=self.training,
+        )
+
+        final_hidden_states = torch.zeros(
+            (batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device
+        )
+
+        # One hot encode the selected experts to create an expert mask
+        # this will be used to easily index which expert is going to be sollicitated
+        expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).permute(2, 1, 0)
+
+        # Loop over all available experts in the model and perform the computation on each expert
+        for expert_idx in range(self.num_experts):
+            expert_layer = self.experts[expert_idx]
+            idx, top_x = torch.where(expert_mask[expert_idx])
+
+            if top_x.shape[0] == 0:
+                continue
+
+            # in torch it is faster to index using lists than torch tensors
+            top_x_list = top_x.tolist()
+            idx_list = idx.tolist()
+
+            # Index the correct hidden states and compute the expert hidden state for
+            # the current expert. We need to make sure to multiply the output hidden
+            # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
+            current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim)
+            current_hidden_states = expert_layer(current_state) * routing_weights[top_x_list, idx_list, None]
+
+            # However `index_add_` only support torch tensors for indexing so we'll use
+            # the `top_x` tensor here.
+            final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
+        final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
+        # print ( 'moe', self.iter, torch.norm(final_hidden_states).item())
+        return final_hidden_states, router_logits
 
 class RWKV7Block(nn.Module):
 
