@@ -147,6 +147,7 @@ class RWKV7Block(nn.Module):
         past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         output_attentions: Optional[bool] = False,
+        output_router_logits: Optional[bool] = False,
         v_first: torch.Tensor = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
@@ -167,15 +168,16 @@ class RWKV7Block(nn.Module):
             hidden_states = residual + hidden_states
             residual = hidden_states
             hidden_states = self.ffn_norm(hidden_states)
+        hidden_states, router_logits = self.block_sparse_moe(hidden_states)
         hidden_states, past_key_values = self.ffn(hidden_states, attention_mask, past_key_values)
         hidden_states = residual + hidden_states
 
-        outputs = (hidden_states, attentions, past_key_values, v_first)
+        outputs = (hidden_states, attentions, past_key_values, v_first, router_logits)
 
         return outputs
 
 
-class RWKV7PreTrainedModel(PreTrainedModel):
+class RWKV7MOEPreTrainedModel(PreTrainedModel):
 
     config_class = RWKV7Config
     base_model_prefix = 'model'
@@ -224,7 +226,7 @@ class RWKV7PreTrainedModel(PreTrainedModel):
                         p /= math.sqrt(num_residuals_per_layer * self.config.num_hidden_layers)
 
 
-class RWKV7MOEModel(RWKV7PreTrainedModel):
+class RWKV7MOEModel(RWKV7MOEPreTrainedModel):
 
     def __init__(self, config: RWKV7Config):
         super().__init__(config)
@@ -345,7 +347,7 @@ class RWKV7MOEModel(RWKV7PreTrainedModel):
         )
 
 
-class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
+class RWKV7MOEForCausalLM(RWKV7MOEPreTrainedModel, GenerationMixin):
 
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -401,6 +403,7 @@ class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
         inputs_embeds: Optional[torch.Tensor] = None,
         use_cache: bool = True,
         num_logits_to_keep: Optional[int] = None,
+        output_router_logits=False,
         **kwargs
     ):
         # only last token for `inputs_ids` if the `past_key_values` is not empty.
@@ -424,6 +427,7 @@ class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
             'use_cache': use_cache,
             'attention_mask': attention_mask,
             'num_logits_to_keep': num_logits_to_keep,
+            'output_router_logits': output_router_logits,
         })
         return model_inputs
 
@@ -446,6 +450,11 @@ class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
+        #copied from phimoe
+        output_router_logits = (
+            output_router_logits if output_router_logits is not None else self.config.output_router_logits
+        )
+
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.model(
@@ -485,15 +494,28 @@ class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
                                 self.lm_head.bias)
             else:
                 loss = loss_fct(logits.view(-1, self.config.vocab_size), labels.view(-1))
+        
+        #copied from phimoe
+        aux_loss = None
+        if output_router_logits:
+            aux_loss = load_balancing_loss_func(
+                outputs.router_logits if return_dict else outputs[-1],
+                self.num_experts,
+                self.num_experts_per_tok,
+                attention_mask,
+            )
+            if labels is not None:
+                loss += self.router_aux_loss_coef * aux_loss.to(loss.device) 
 
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalLMOutputWithPast(
+        return MoeCausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            router_logits=outputs.router_logits,
         )
