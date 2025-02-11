@@ -258,13 +258,17 @@ class RWKV7MOEModel(RWKV7PreTrainedModel):
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
+        output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         **kwargs: Unpack[Dict]
-    ) -> Union[Tuple, BaseModelOutputWithPast]:
+    ) -> Union[Tuple, MoeModelOutputWithPast]:
         if output_attentions:
-            warnings.warn("`RWKV7Model` does not `output_attentions` now, setting it to `False`.")
+            warnings.warn("`RWKV7MOEModel` does not `output_attentions` now, setting it to `False`.")
             output_attentions = False
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_router_logits = (
+            output_router_logits if output_router_logits is not None else self.config.output_router_logits
+        )
         output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         use_cache = use_cache if use_cache is not None else (self.config.use_cache if not self.training else False)
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -288,6 +292,7 @@ class RWKV7MOEModel(RWKV7PreTrainedModel):
 
         all_hidden_states = () if output_hidden_states else None
         all_attns = () if output_attentions else None
+        all_router_logits = () if output_router_logits else None
 
         v_first = torch.zeros_like(hidden_states)
         for layer in self.layers:
@@ -295,23 +300,25 @@ class RWKV7MOEModel(RWKV7PreTrainedModel):
                 all_hidden_states += (hidden_states,)
 
             if self.gradient_checkpointing and self.training:
-                hidden_states, attentions, past_key_values, v_first = self._gradient_checkpointing_func(
+                hidden_states, attentions, past_key_values, v_first, output_router_logits = self._gradient_checkpointing_func(
                     layer.__call__,
                     hidden_states,
                     attention_mask,
                     past_key_values,
                     use_cache,
                     output_attentions,
+                    output_router_logits,
                     v_first,
                     **kwargs
                 )
             else:
-                hidden_states, attentions, past_key_values, v_first = layer(
+                hidden_states, attentions, past_key_values, v_first, output_router_logits = layer(
                     hidden_states,
                     attention_mask=attention_mask,
                     past_key_values=past_key_values,
                     use_cache=use_cache,
                     output_attentions=output_attentions,
+                    output_router_logits=output_router_logits,
                     v_first=v_first,
                     **kwargs
                 )
@@ -324,14 +331,17 @@ class RWKV7MOEModel(RWKV7PreTrainedModel):
         # add hidden states from the last decoder layer
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
+        if output_router_logits:
+            all_router_logits += (output_router_logits,)
 
         if not return_dict:
-            return tuple(i for i in [hidden_states, past_key_values, all_hidden_states, all_attns] if i is not None)
-        return BaseModelOutputWithPast(
+            return tuple(i for i in [hidden_states, past_key_values, all_hidden_states, all_attns, all_router_logits] if i is not None)
+        return MoeModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
             hidden_states=all_hidden_states,
-            attentions=all_attns
+            attentions=all_attns,
+            router_logits=all_router_logits,
         )
 
 
@@ -427,10 +437,11 @@ class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
+        output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         num_logits_to_keep: Optional[int] = 0,
         **kwargs: Unpack[Dict]
-    ) -> Union[Tuple, CausalLMOutputWithPast]:
+    ) -> Union[Tuple, MoeCausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -445,6 +456,7 @@ class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
+            output_router_logits=output_router_logits,
             return_dict=return_dict,
             **kwargs
         )
