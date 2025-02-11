@@ -319,7 +319,7 @@ class RWKV7Block(nn.Module):
 
     def __init__(
         self,
-        config: RWKV7Config,
+        config: RWKV7MOEConfig,
         layer_idx: int
     ) -> RWKV7Block:
         super().__init__()
@@ -415,7 +415,7 @@ class RWKV7Block(nn.Module):
 
 class RWKV7MOEPreTrainedModel(PreTrainedModel):
 
-    config_class = RWKV7Config
+    config_class = RWKV7MOEConfig
     base_model_prefix = 'model'
     supports_gradient_checkpointing = True
     _no_split_modules = ['RWKV7Block']
@@ -464,7 +464,7 @@ class RWKV7MOEPreTrainedModel(PreTrainedModel):
 
 class RWKV7MOEModel(RWKV7MOEPreTrainedModel):
 
-    def __init__(self, config: RWKV7Config):
+    def __init__(self, config: RWKV7MOEConfig):
         super().__init__(config)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
