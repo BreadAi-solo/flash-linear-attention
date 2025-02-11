@@ -36,7 +36,7 @@ from transformers.utils import (
     logging,
 )
 
-from .configuration_rwkv7moe import rwkv7MoeConfig
+from fla.models.rwkv7moe.configuration_rwkv7moe import rwkv7MoeConfig
 try:
     from fla.ops.rwkv7 import fused_recurrent_rwkv7
 except ImportError:
