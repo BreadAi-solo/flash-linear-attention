@@ -37,6 +37,11 @@ class RWKV7MOEConfig(PretrainedConfig):
         initializer_range: float = 0.02,
         fuse_norm: bool = True,
         fuse_cross_entropy: bool = True,
+        num_local_experts=16,
+        output_router_logits=False,
+        router_aux_loss_coef=0.001,
+        router_jitter_noise=0.01,
+        input_jitter_noise=0.0,
         vocab_size: int = 32000,
         **kwargs
     ):
@@ -62,6 +67,13 @@ class RWKV7MOEConfig(PretrainedConfig):
         self.fuse_norm = fuse_norm
         self.fuse_cross_entropy = fuse_cross_entropy
         self.vocab_size = vocab_size
+
+        self.num_experts_per_tok = num_experts_per_tok
+        self.num_local_experts = num_local_experts
+        self.output_router_logits = output_router_logits
+        self.router_aux_loss_coef = router_aux_loss_coef
+        self.router_jitter_noise = router_jitter_noise
+        self.input_jitter_noise = input_jitter_noise
 
         if attn is not None:
             if not isinstance(attn, Dict):
