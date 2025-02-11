@@ -149,9 +149,10 @@ def sparsemixer(scores, top_k, jitter_eps, training):
     # apply mask 
     masked_gates = scores.masked_fill(mask_logits_threshold, float('-inf'))
     if training:
-        selected_experts = (
-            masked_gates - torch.empty_like(masked_gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
-        ).max(dim=-1)[1].unsqueeze(-1) # gumbel sampling, more robust than than the multinomial method
+        # Create noise tensor with the same device and dtype as masked_gates
+        noise = torch.empty_like(masked_gates)
+        noise = noise.exponential_().log()
+        selected_experts = (masked_gates - noise).max(dim=-1)[1].unsqueeze(-1)
     else:
         selected_experts = max_ind
         
