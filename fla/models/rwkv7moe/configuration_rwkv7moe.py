@@ -38,6 +38,7 @@ class RWKV7MOEConfig(PretrainedConfig):
         fuse_norm: bool = True,
         fuse_cross_entropy: bool = True,
         num_local_experts=16,
+        num_experts_per_tok=2,
         output_router_logits=False,
         router_aux_loss_coef=0.001,
         router_jitter_noise=0.01,
