@@ -90,6 +90,7 @@ class RWKV7Block(nn.Module):
         super().__init__()
 
         self.config = config
+        self.block_sparse_moe = PhiMoESparseMoeBlock(config)
         self.layer_idx = layer_idx
 
         if config.norm_first and layer_idx == 0:
