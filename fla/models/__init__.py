@@ -41,7 +41,7 @@ __all__ = [
     'Mamba2Config', 'Mamba2ForCausalLM', 'Mamba2Model',
     'RetNetConfig', 'RetNetForCausalLM', 'RetNetModel',
     'RWKV6Config', 'RWKV6ForCausalLM', 'RWKV6Model',
-    'RWKV7Config', 'RWKV7ForCausalLM', 'RWKV7Model',
+    'RWKV7Config', 'RWKV7ForCausalLM', 'RWKV7Model', 'RWKV7MOEmodel', 'RWKV7MOEForCausalLM',
     'SambaConfig', 'SambaForCausalLM', 'SambaModel',
     'TransformerConfig', 'TransformerForCausalLM', 'TransformerModel'
 ]
