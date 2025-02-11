@@ -29,6 +29,11 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 
+logger = logging.get_logger(__name__)
+
+_CHECKPOINT_FOR_DOC = "RWKV/rwkv-6-moe-11a41b"
+_CONFIG_FOR_DOC = "Rwkv7MoeConfig"
+
 class RWKV7FeedForward(nn.Module):
 
     def __init__(
