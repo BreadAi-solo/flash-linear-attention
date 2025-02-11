@@ -149,9 +149,10 @@ def sparsemixer(scores, top_k, jitter_eps, training):
     # apply mask 
     masked_gates = scores.masked_fill(mask_logits_threshold, float('-inf'))
     if training:
-        selected_experts = (
-            masked_gates - torch.empty_like(masked_gates, memory_format=torch.legacy_contiguous_format).exponential_().log()
-        ).max(dim=-1)[1].unsqueeze(-1) # gumbel sampling, more robust than than the multinomial method
+        # Create noise tensor with the same device and dtype as masked_gates
+        noise = torch.empty_like(masked_gates)
+        noise = noise.exponential_().log()
+        selected_experts = (masked_gates - noise).max(dim=-1)[1].unsqueeze(-1)
     else:
         selected_experts = max_ind
         
@@ -164,9 +165,8 @@ def sparsemixer(scores, top_k, jitter_eps, training):
         max_scores, max_ind = masked_gates.max(dim=-1, keepdim=True)
         mask_for_one = torch.logical_or(
             selected_experts == max_ind,
-            torch.rand_like(max_scores) > 0.75 # Heun's third-order method: f(x) - f(0) = .25 f'(x) + .75 f'(x/3.)
-        ) 
-        # 1 -> 1.0 & 0 -> 1./3: lambda x: (x + 0.5) / 1.5
+            torch.rand_like(max_scores) > 0.75
+        )
         mask_for_one = torch.add(0.3333, mask_for_one, alpha=0.6667).type_as(masked_gates)
 
         multiplier = mp.apply(
@@ -197,11 +197,13 @@ def sparsemixer(scores, top_k, jitter_eps, training):
     # apply mask 
     masked_gates_top2 = masked_scores.masked_fill(mask_logits_threshold, float('-inf'))
     if training:
-        selected_experts_top2 = (
-            masked_gates_top2 - torch.empty_like(masked_gates_top2, memory_format=torch.legacy_contiguous_format).exponential_().log()
-        ).max(dim=-1)[1].unsqueeze(-1) # gumbel sampling, more robust than than the multinomial method
+        # Create noise tensor with the same device and dtype as masked_gates_top2
+        noise = torch.empty_like(masked_gates_top2)
+        noise = noise.exponential_().log()
+        selected_experts_top2 = (masked_gates_top2 - noise).max(dim=-1)[1].unsqueeze(-1)
     else:
         selected_experts_top2 = max_ind
+        
     # compute scores for gradients
     masked_gates_top2 = torch.softmax(masked_gates_top2, dim=-1)
     multiplier_top2_o = masked_gates_top2.gather(dim=-1, index=selected_experts_top2)
@@ -211,9 +213,8 @@ def sparsemixer(scores, top_k, jitter_eps, training):
         max_scores, max_ind = masked_gates_top2.max(dim=-1, keepdim=True)
         mask_for_one_top2 = torch.logical_or(
             selected_experts_top2 == max_ind,
-            torch.rand_like(max_scores).uniform_() > 0.75 # Heun's third-order method: f(x) - f(0) = .25 f'(x) + .75 f'(x/3.)
-        ) 
-        # 1 -> 1.0 & 0 -> 1./3: lambda x: (x + 0.5) / 1.5
+            torch.rand_like(max_scores) > 0.75
+        )
         mask_for_one_top2 = torch.add(0.3333, mask_for_one_top2, alpha=0.6667).type_as(masked_gates_top2)
 
         multiplier_top2 = mp.apply(
@@ -233,7 +234,7 @@ def sparsemixer(scores, top_k, jitter_eps, training):
         multiplier, 
         selected_experts,
     )
-
+  
 iterations = 0
 class PhiMoESparseMoeBlock(nn.Module):
     """
