@@ -10,14 +10,14 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint
 from transformers.generation import GenerationMixin
-from transformers.modeling_outputs import (BaseModelOutputWithPast,
-                                           CausalLMOutputWithPast)
+from transformers.modeling_outputs import (MoeModelOutputWithPast,
+                                           MoeCausalLMOutputWithPast)
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 
 from fla.layers.attn import Attention
 from fla.layers.rwkv7 import RWKV7Attention
-from fla.models.rwkv7.configuration_rwkv7 import RWKV7Config
+from fla.models.rwkv7.configuration_rwkv7moe import RWKV7MOEConfig
 from fla.models.utils import Cache
 from fla.modules import (FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss,
                          LayerNorm)
@@ -31,7 +31,8 @@ logger = logging.get_logger(__name__)
 
 class RWKV7FeedForward(nn.Module):
 
-    def __init__(
+    def __init__(    MoeCausalLMOutputWithPast,
+    MoeModelOutputWithPast,
         self,
         hidden_size: int,
         hidden_ratio: Optional[int] = None,
