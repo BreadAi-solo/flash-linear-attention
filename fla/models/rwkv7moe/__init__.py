@@ -2,12 +2,12 @@
 
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
 
-from fla.models.rwkv7.configuration_rwkv7 import RWKV7Config
-from fla.models.rwkv7.modeling_rwkv7 import RWKV7ForCausalLM, RWKV7Model
+from fla.models.rwkv7.configuration_rwkv7moe import RWKV7MOEConfig
+from fla.models.rwkv7.modeling_rwkv7moe import RWKV7MOEForCausalLM, RWKV7MOEModel
 
-AutoConfig.register(RWKV7Config.model_type, RWKV7Config, True)
-AutoModel.register(RWKV7Config, RWKV7Model, True)
-AutoModelForCausalLM.register(RWKV7Config, RWKV7ForCausalLM, True)
+AutoConfig.register(RWKV7MOEConfig.model_type, RWKV7MOEConfig, True)
+AutoModel.register(RWKV7MOEConfig, RWKV7MOEModel, True)
+AutoModelForCausalLM.register(RWKV7MOEConfig, RWKV7MOEForCausalLM, True)
 
 
-__all__ = ['RWKV7Config', 'RWKV7ForCausalLM', 'RWKV7Model']
+__all__ = ['RWKV7MOEConfig', 'RWKV7MOEForCausalLM', 'RWKV7MOEModel']
