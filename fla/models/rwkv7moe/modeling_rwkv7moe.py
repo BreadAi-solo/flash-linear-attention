@@ -17,7 +17,7 @@ from transformers.utils import logging
 
 from fla.layers.attn import Attention
 from fla.layers.rwkv7 import RWKV7Attention
-from fla.models.rwkv7.configuration_rwkv7moe import RWKV7MOEConfig
+from fla.models.rwkv7moe.configuration_rwkv7moe import RWKV7MOEConfig
 from fla.models.utils import Cache
 from fla.modules import (FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss,
                          LayerNorm)
