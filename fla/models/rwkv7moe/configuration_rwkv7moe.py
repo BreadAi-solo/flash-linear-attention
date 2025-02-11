@@ -1,96 +1,126 @@
-# -*- coding: utf-8 -*-
-
-from typing import Dict, Optional
+# coding=utf-8
+# Copyright 2023 The OpenAI Team Authors and HuggingFace Inc. team.
+# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+""" RWKV configuration"""
 
 from transformers.configuration_utils import PretrainedConfig
+from transformers.utils import logging
 
 
-class RWKV7MOEConfig(PretrainedConfig):
+logger = logging.get_logger(__name__)
 
-    model_type = 'rwkv7moe'
-    keys_to_ignore_at_inference = ['past_key_values']
+rwkv7_PRETRAINED_CONFIG_ARCHIVE_MAP = {}
+
+
+class rwkv7MoeConfig(PretrainedConfig):
+    """
+    This is the configuration class to store the configuration of a [`rwkv7MoeModel`]. It is used to instantiate a rwkv7Moe
+    model according to the specified arguments, defining the model architecture. Instantiating a configuration with the
+    defaults will yield a similar configuration to that of the RWVK-4
+    [RWKV/rwkv-5-world-1b5](https://huggingface.co/RWKV/rwkv-5-world-1b5) architecture.
+
+    Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
+    documentation from [`PretrainedConfig`] for more information.
+
+
+    Args:
+        vocab_size (`int`, *optional*, defaults to 65536):
+            Vocabulary size of the rwkv7Moe model. Defines the number of different tokens that can be represented by the
+            `inputs_ids` passed when calling [`rwkv7MoeModel`].
+        hidden_size (`int`, *optional*, defaults to 768):
+            Dimensionality of the embeddings and hidden states.
+        num_hidden_layers (`int`, *optional*, defaults to 24):
+            Number of hidden layers in the model.
+        attention_hidden_size (`int`, *optional*):
+            Dimensionality of the attention hidden states. Will default to `hidden_size` if unset.
+        num_attention_heads (`int`, *optional*, defaults to 64):
+            The attention heads to use in rwkv7 self_attention module.
+        head_size (`int`, *optional*, defaults to 64): head_size of rwkv7 self_attention module.
+        intermediate_size (`int`, *optional*):
+            Dimensionality of the inner feed-forward layers. Will default to 4 times `hidden_size` if unset.
+        layer_norm_epsilon (`float`, *optional*, defaults to 1e-05):
+            The epsilon to use in the layer normalization layers.
+        shared_expert (`bool`, *optional*, defaults to True):
+            Whether or not there is a shared expert
+        num_experts (`int`, *optional*, defaults to 8):
+            The number of feed forward network experts.
+        bos_token_id (`int`, *optional*, defaults to 0):
+            The id of the beginning of sentence token in the vocabulary. Defaults to 0.
+        eos_token_id (`int`, *optional*, defaults to 0):
+            The id of the end of sentence token in the vocabulary. Defaults to 0.
+        rescale_every (`int`, *optional*, defaults to 6):
+            At inference, the hidden states (and weights of the correponding output layers) are divided by 2 every
+            `rescale_every` layer. If set to 0 or a negative number, no rescale is done.
+        tie_word_embeddings (`bool`, *optional*, defaults to `False`):
+            Whether or not to tie the word embeddings with the input token embeddings.
+        use_cache (`bool`, *optional*, defaults to `True`):
+            Whether or not the model should return the last state.
+
+
+    Example:
+
+    ```python
+    >>> from transformers import rwkv7MoeConfig, rwkv7MoeModel
+
+    >>> # Initializing a rwkv7Moe configuration
+    >>> configuration = rwkv7MoeConfig()
+
+    >>> # Initializing a model (with random weights) from the configuration
+    >>> model = rwkv7MoeModel(configuration)
+
+    >>> # Accessing the model configuration
+    >>> configuration = model.config
+    ```"""
+
+    model_type = "rwkv7_moe"
 
     def __init__(
         self,
-        attn_mode: str = "chunk",
-        hidden_size: int = 2048,
-        hidden_ratio: Optional[int] = 4,
-        intermediate_size: Optional[int] = None,
-        num_hidden_layers: int = 24,
-        head_dim: Optional[int] = 64,
-        num_heads: Optional[int] = None,
-        decay_low_rank_dim: int = 64,
-        gate_low_rank_dim: int = 128,
-        a_low_rank_dim: int = 64,
-        v_low_rank_dim: int = 16,
-        hidden_act: str = "sqrelu",
-        max_position_embeddings: int = 2048,
-        norm_first: bool = True,
-        norm_bias: bool = True,
-        norm_eps: float = 1e-5,
-        attn: Optional[Dict] = None,
-        use_cache: bool = True,
-        pad_token_id: int = None,
-        bos_token_id: int = 1,
-        eos_token_id: int = 2,
-        tie_word_embeddings: bool = False,
-        initializer_range: float = 0.02,
-        fuse_norm: bool = True,
-        fuse_cross_entropy: bool = True,
-        num_local_experts=16,
-        num_experts_per_tok=2,
-        output_router_logits=False,
-        router_aux_loss_coef=0.001,
-        router_jitter_noise=0.01,
-        input_jitter_noise=0.0,
-        vocab_size: int = 32000,
-        **kwargs
+        vocab_size=65536,
+        hidden_size=768,
+        num_hidden_layers=24,
+        attention_hidden_size=None,
+        head_size=64,
+        head_size_divisor=8,
+        intermediate_size=None,
+        layer_norm_epsilon=1e-5,
+        shared_expert=True,
+        num_experts=8,
+        bos_token_id=0,
+        eos_token_id=0,
+        rescale_every=6,
+        tie_word_embeddings=False,
+        use_cache=True,
+        **kwargs,
     ):
-        self.attn_mode = attn_mode
-        self.hidden_size = hidden_size
-        self.hidden_ratio = hidden_ratio
-        self.intermediate_size = intermediate_size
-        self.norm_first = norm_first
-        self.num_hidden_layers = num_hidden_layers
-        self.head_dim = head_dim
-        self.num_heads = num_heads
-        self.decay_low_rank_dim = decay_low_rank_dim
-        self.gate_low_rank_dim = gate_low_rank_dim
-        self.a_low_rank_dim = a_low_rank_dim
-        self.v_low_rank_dim = v_low_rank_dim
-        self.hidden_act = hidden_act
-        self.max_position_embeddings = max_position_embeddings
-        self.norm_bias = norm_bias
-        self.norm_eps = norm_eps
-        self.attn = attn
-        self.use_cache = use_cache
-        self.initializer_range = initializer_range
-        self.fuse_norm = fuse_norm
-        self.fuse_cross_entropy = fuse_cross_entropy
         self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.num_hidden_layers = num_hidden_layers
+        self.attention_hidden_size = attention_hidden_size if attention_hidden_size is not None else hidden_size
+        self.head_size = head_size
+        self.head_size_divisor = head_size_divisor
+        self.intermediate_size = None
+        self.layer_norm_epsilon = layer_norm_epsilon
+        self.shared_expert = shared_expert
+        self.num_experts = num_experts
+        self.rescale_every = rescale_every
+        self.use_cache = use_cache
 
-        self.num_experts_per_tok = num_experts_per_tok
-        self.num_local_experts = num_local_experts
-        self.output_router_logits = output_router_logits
-        self.router_aux_loss_coef = router_aux_loss_coef
-        self.router_jitter_noise = router_jitter_noise
-        self.input_jitter_noise = input_jitter_noise
-
-        if attn is not None:
-            if not isinstance(attn, Dict):
-                raise ValueError("attn must be a dictionary")
-            if 'layers' not in attn:
-                raise ValueError("Layer indices must be provided to initialize hybrid attention layers")
-            if 'num_heads' not in attn:
-                raise ValueError("Number of heads must be provided to initialize hybrid attention layers")
-            attn['num_kv_heads'] = attn.get('num_kv_heads', attn['num_heads'])
-            attn['window_size'] = attn.get('window_size', None)
-            attn['rope_theta'] = attn.get('rope_theta', 10000.)
+        self.bos_token_id = bos_token_id
+        self.eos_token_id = eos_token_id
 
         super().__init__(
-            pad_token_id=pad_token_id,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            tie_word_embeddings=tie_word_embeddings,
-            **kwargs,
+            tie_word_embeddings=tie_word_embeddings, bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs
         )
