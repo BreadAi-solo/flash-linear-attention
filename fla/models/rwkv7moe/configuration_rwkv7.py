@@ -5,9 +5,9 @@ from typing import Dict, Optional
 from transformers.configuration_utils import PretrainedConfig
 
 
-class RWKV7Config(PretrainedConfig):
+class RWKV7MOEConfig(PretrainedConfig):
 
-    model_type = 'rwkv7'
+    model_type = 'rwkv7moe'
     keys_to_ignore_at_inference = ['past_key_values']
 
     def __init__(
