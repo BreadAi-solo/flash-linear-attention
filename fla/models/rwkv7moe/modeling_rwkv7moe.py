@@ -224,7 +224,7 @@ class RWKV7PreTrainedModel(PreTrainedModel):
                         p /= math.sqrt(num_residuals_per_layer * self.config.num_hidden_layers)
 
 
-class RWKV7Model(RWKV7PreTrainedModel):
+class RWKV7MOEModel(RWKV7PreTrainedModel):
 
     def __init__(self, config: RWKV7Config):
         super().__init__(config)
@@ -335,7 +335,7 @@ class RWKV7Model(RWKV7PreTrainedModel):
         )
 
 
-class RWKV7ForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
+class RWKV7MOEForCausalLM(RWKV7PreTrainedModel, GenerationMixin):
 
     _tied_weights_keys = ["lm_head.weight"]
 
