@@ -31,8 +31,7 @@ logger = logging.get_logger(__name__)
 
 class RWKV7FeedForward(nn.Module):
 
-    def __init__(    MoeCausalLMOutputWithPast,
-    MoeModelOutputWithPast,
+    def __init__(
         self,
         hidden_size: int,
         hidden_ratio: Optional[int] = None,
